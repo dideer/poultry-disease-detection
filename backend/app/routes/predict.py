@@ -7,6 +7,7 @@ from PIL import Image
 import numpy as np
 import os
 import uuid
+import gdown
 from app.models.detection import Detection
 
 predict_bp = Blueprint('predict', __name__)
@@ -15,7 +16,7 @@ predict_bp = Blueprint('predict', __name__)
 # Load model once when app starts
 # -----------------------------------------------
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-MODEL_PATH = os.path.join(BASE_DIR, '../best_model.keras')
+MODEL_PATH = os.path.join(BASE_DIR, 'best_model.keras')
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'frontend', 'uploads')
 
 # Create uploads folder if it doesn't exist
