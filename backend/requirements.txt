@@ -1,0 +1,13 @@
+Flask
+Flask-Bcrypt
+Flask-CORS
+psycopg2-binary
+flask
+flask-bcrypt
+flask-cors
+psycopg2-binary
+tensorflow
+numpy
+Pillow
+gdown
+gunicorn
