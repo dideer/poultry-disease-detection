@@ -29,9 +29,10 @@ if not os.path.exists(MODEL_PATH):
     print("⬇️  Downloading model from Google Drive...")
     try:
         gdown.download(
-            "https://drive.google.com/uc?id=1nFeccdyQ6jwZLaH-H5PvYqRyegXNEY_z",
+            "https://drive.google.com/file/d/1nFeccdyQ6jwZLaH-H5PvYqRyegXNEY_z/view?usp=sharing",
             MODEL_PATH,
-            quiet=False
+            quiet=False,
+            fuzzy=True        # ← THIS makes it work with sharing links
         )
         print("✅ Model downloaded!")
     except Exception as e:
