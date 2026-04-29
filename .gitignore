@@ -1,5 +1,6 @@
 Dataset/
 best_model.keras
+best_model.tflite
 __pycache__/
 *.pyc
 .env

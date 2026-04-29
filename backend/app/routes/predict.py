@@ -2,34 +2,33 @@
 # AI prediction route - handles image upload and disease detection
 
 from flask import Blueprint, request, jsonify
-from tensorflow.keras.models import load_model
 from PIL import Image
 import numpy as np
 import os
 import uuid
 import gdown
+import tensorflow as tf
 from app.models.detection import Detection
 
 predict_bp = Blueprint('predict', __name__)
 
 # -----------------------------------------------
-# Load model once when app starts
+# Paths
 # -----------------------------------------------
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-MODEL_PATH = os.path.join(BASE_DIR, 'best_model.keras')
+MODEL_PATH = os.path.join(BASE_DIR, 'best_model.tflite')
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'frontend', 'uploads')
 
-# Create uploads folder if it doesn't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-model = None  # ← always define first
+interpreter = None
 
-# Download model only if not present (works locally AND on Render)
+# Download model if not present
 if not os.path.exists(MODEL_PATH):
-    print("⬇️  Downloading model from Google Drive...")
+    print("⬇️  Downloading TFLite model from Google Drive...")
     try:
         gdown.download(
-            id="1nFeccdyQ6jwZLaH-H5PvYqRyegXNEY_z",
+            id="1uCOi1UgPwgaZJ_b8eyEpRjjSboAXJoEk",
             output=MODEL_PATH,
             quiet=False
         )
@@ -39,14 +38,20 @@ if not os.path.exists(MODEL_PATH):
 else:
     print("✅ Model already exists, skipping download.")
 
-# Load the AI model
+# Load TFLite model
 try:
-    model = load_model(MODEL_PATH)
-    print("✅ AI Model loaded successfully!")
+    interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
+    interpreter.allocate_tensors()
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    print("✅ TFLite Model loaded successfully!")
 except Exception as e:
-    model = None
+    interpreter = None
     print(f"[ERROR] Failed to load model: {e}")
+
+# -----------------------------------------------
 # Class names and advice
+# -----------------------------------------------
 CLASSES = ['crd', 'fowlpox', 'healthy']
 
 ADVICE = {
@@ -88,20 +93,22 @@ ADVICE = {
     }
 }
 
+# -----------------------------------------------
+# Helper
+# -----------------------------------------------
 def preprocess_image(image_path):
-    """Preprocess image for model prediction."""
     img = Image.open(image_path).convert('RGB')
     img = img.resize((224, 224))
-    img_array = np.array(img) / 255.0
+    img_array = np.array(img, dtype=np.float32) / 255.0
     img_array = np.expand_dims(img_array, axis=0)
     return img_array
 
+# -----------------------------------------------
+# Routes
+# -----------------------------------------------
 @predict_bp.route('/api/predict', methods=['POST'])
 def predict():
-    """
-    Receive image, run AI prediction, save to DB, return result.
-    """
-    if model is None:
+    if interpreter is None:
         return jsonify({
             'success': False,
             'message': 'AI model not available'
@@ -123,25 +130,27 @@ def predict():
         }), 400
 
     try:
-        # Save uploaded image with unique name
         ext = os.path.splitext(file.filename)[1]
         unique_name = f"{uuid.uuid4().hex}{ext}"
         filepath = os.path.join(UPLOAD_FOLDER, unique_name)
         file.save(filepath)
 
-        # Preprocess and predict
+        # Preprocess image
         img_array = preprocess_image(filepath)
-        predictions = model.predict(img_array)
+
+        # Run TFLite prediction
+        interpreter.set_tensor(input_details[0]['index'], img_array)
+        interpreter.invoke()
+        predictions = interpreter.get_tensor(output_details[0]['index'])
+
         predicted_index = int(np.argmax(predictions[0]))
         predicted_class = CLASSES[predicted_index]
         confidence = float(predictions[0][predicted_index]) * 100
 
-        # Individual probabilities
         crd_prob     = float(predictions[0][0]) * 100
         fowlpox_prob = float(predictions[0][1]) * 100
         healthy_prob = float(predictions[0][2]) * 100
 
-        # Save to database
         Detection.save_detection(
             username=username,
             image_name=unique_name,
@@ -152,7 +161,6 @@ def predict():
             healthy_prob=round(healthy_prob, 2)
         )
 
-        # Return result
         return jsonify({
             'success': True,
             'predicted_class': predicted_class,
@@ -172,9 +180,9 @@ def predict():
             'message': f'Prediction failed: {str(e)}'
         }), 500
 
+
 @predict_bp.route('/api/history', methods=['GET'])
 def history():
-    """Get all detection history."""
     username = request.args.get('username', None)
     if username:
         detections = Detection.get_detections_by_user(username)
@@ -197,9 +205,9 @@ def history():
 
     return jsonify({'success': True, 'detections': results}), 200
 
+
 @predict_bp.route('/api/statistics', methods=['GET'])
 def statistics():
-    """Get detection statistics for dashboard."""
     stats = Detection.get_statistics()
     total = sum(stats.values())
     return jsonify({
