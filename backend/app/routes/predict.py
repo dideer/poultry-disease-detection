@@ -1,20 +1,17 @@
-# app/routes/predict.py
-# AI prediction route - handles image upload and disease detection
-
-from flask import Blueprint, request, jsonify
-from PIL import Image
-import numpy as np
 import os
 import uuid
+
+from flask import Blueprint, jsonify, request
 import gdown
+import numpy as np
+from PIL import Image
 import tensorflow as tf
+
 from app.models.detection import Detection
+from app.models.user import User
 
 predict_bp = Blueprint('predict', __name__)
 
-# -----------------------------------------------
-# Paths
-# -----------------------------------------------
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 MODEL_PATH = os.path.join(BASE_DIR, 'best_model.tflite')
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'frontend', 'uploads')
@@ -22,36 +19,33 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, 'frontend', 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 interpreter = None
+input_details = None
+output_details = None
 
-# Download model if not present
 if not os.path.exists(MODEL_PATH):
-    print("⬇️  Downloading TFLite model from Google Drive...")
+    print("[INFO] Downloading TFLite model from Google Drive...")
     try:
         gdown.download(
             id="1uCOi1UgPwgaZJ_b8eyEpRjjSboAXJoEk",
             output=MODEL_PATH,
             quiet=False
         )
-        print("✅ Model downloaded!")
-    except Exception as e:
-        print(f"[WARN] Could not download model: {e}")
+        print("[INFO] Model downloaded.")
+    except Exception as exc:
+        print(f"[WARN] Could not download model: {exc}")
 else:
-    print("✅ Model already exists, skipping download.")
+    print("[INFO] Model already exists, skipping download.")
 
-# Load TFLite model
 try:
     interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
     interpreter.allocate_tensors()
     input_details = interpreter.get_input_details()
     output_details = interpreter.get_output_details()
-    print("✅ TFLite Model loaded successfully!")
-except Exception as e:
+    print("[INFO] TFLite model loaded successfully.")
+except Exception as exc:
     interpreter = None
-    print(f"[ERROR] Failed to load model: {e}")
+    print(f"[ERROR] Failed to load model: {exc}")
 
-# -----------------------------------------------
-# Class names and advice
-# -----------------------------------------------
 CLASSES = ['crd', 'fowlpox', 'healthy']
 
 ADVICE = {
@@ -93,19 +87,14 @@ ADVICE = {
     }
 }
 
-# -----------------------------------------------
-# Helper
-# -----------------------------------------------
+
 def preprocess_image(image_path):
     img = Image.open(image_path).convert('RGB')
     img = img.resize((224, 224))
     img_array = np.array(img, dtype=np.float32) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
-    return img_array
+    return np.expand_dims(img_array, axis=0)
 
-# -----------------------------------------------
-# Routes
-# -----------------------------------------------
+
 @predict_bp.route('/api/predict', methods=['POST'])
 def predict():
     if interpreter is None:
@@ -122,6 +111,7 @@ def predict():
 
     file = request.files['file']
     username = request.form.get('username', 'unknown')
+    user = User.find_by_username(username) if username and username != 'unknown' else None
 
     if file.filename == '':
         return jsonify({
@@ -135,10 +125,8 @@ def predict():
         filepath = os.path.join(UPLOAD_FOLDER, unique_name)
         file.save(filepath)
 
-        # Preprocess image
         img_array = preprocess_image(filepath)
 
-        # Run TFLite prediction
         interpreter.set_tensor(input_details[0]['index'], img_array)
         interpreter.invoke()
         predictions = interpreter.get_tensor(output_details[0]['index'])
@@ -146,19 +134,20 @@ def predict():
         predicted_index = int(np.argmax(predictions[0]))
         predicted_class = CLASSES[predicted_index]
         confidence = float(predictions[0][predicted_index]) * 100
-
-        crd_prob     = float(predictions[0][0]) * 100
+        crd_prob = float(predictions[0][0]) * 100
         fowlpox_prob = float(predictions[0][1]) * 100
         healthy_prob = float(predictions[0][2]) * 100
 
         Detection.save_detection(
+            user_id=user['id'] if user else None,
             username=username,
             image_name=unique_name,
             predicted_class=predicted_class,
             confidence=round(confidence, 2),
             crd_prob=round(crd_prob, 2),
             fowlpox_prob=round(fowlpox_prob, 2),
-            healthy_prob=round(healthy_prob, 2)
+            healthy_prob=round(healthy_prob, 2),
+            chicken_count=1
         )
 
         return jsonify({
@@ -173,37 +162,25 @@ def predict():
             'disease_info': ADVICE[predicted_class],
             'image_name': unique_name
         }), 200
-
-    except Exception as e:
+    except Exception as exc:
         return jsonify({
             'success': False,
-            'message': f'Prediction failed: {str(e)}'
+            'message': f'Prediction failed: {exc}'
         }), 500
 
 
 @predict_bp.route('/api/history', methods=['GET'])
 def history():
     username = request.args.get('username', None)
-    if username:
-        detections = Detection.get_detections_by_user(username)
-    else:
-        detections = Detection.get_all_detections()
+    detections = Detection.get_all_detections(username=username)
 
-    results = []
-    for row in detections:
-        results.append({
-            'id': row[0],
-            'username': row[1],
-            'image_name': row[2],
-            'predicted_class': row[3],
-            'confidence': row[4],
-            'crd_prob': row[5],
-            'fowlpox_prob': row[6],
-            'healthy_prob': row[7],
-            'detected_at': str(row[8])
-        })
-
-    return jsonify({'success': True, 'detections': results}), 200
+    return jsonify({
+        'success': True,
+        'detections': [{
+            **item,
+            'detected_at': str(item['detected_at'])
+        } for item in detections]
+    }), 200
 
 
 @predict_bp.route('/api/statistics', methods=['GET'])

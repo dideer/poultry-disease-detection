@@ -9,6 +9,7 @@ app = create_app()
 try:
     User.create_table()
     Detection.create_table()
+    User.ensure_default_admin()
     print("[INFO] All tables ready!")
 except Exception as exc:
     print(f"[WARN] Skipping database initialization: {exc}")

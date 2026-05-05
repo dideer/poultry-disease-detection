@@ -205,6 +205,8 @@ async function apiFetch(url, options = {}) {
             // Clear authentication data
             localStorage.removeItem('authToken');
             localStorage.removeItem('currentUser');
+            localStorage.removeItem('loggedInUser');
+            localStorage.removeItem('isAdmin');
             
             // Redirect to login page
             window.location.href = 'login.html';
@@ -239,6 +241,8 @@ function logout() {
     // Clear authentication data from localStorage
     localStorage.removeItem('authToken');
     localStorage.removeItem('currentUser');
+    localStorage.removeItem('loggedInUser');
+    localStorage.removeItem('isAdmin');
     
     // Clear any app-specific data
     localStorage.removeItem('uploadedImage');
@@ -309,6 +313,8 @@ function clearAppData() {
     try {
         localStorage.removeItem('authToken');
         localStorage.removeItem('currentUser');
+        localStorage.removeItem('loggedInUser');
+        localStorage.removeItem('isAdmin');
         localStorage.removeItem('uploadedImage');
         localStorage.removeItem('detectionResult');
         return true;

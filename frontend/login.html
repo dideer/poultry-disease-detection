@@ -154,17 +154,23 @@
                 // ===== HANDLE API RESPONSE =====
                 
                 if (response.success) {
-                    // Save minimal session data expected by the dashboard.
+                    // Save session data for dashboard and admin access.
                     localStorage.setItem('authToken', response.token || 'local-session');
                     localStorage.setItem('loggedInUser', username);
                     localStorage.setItem('currentUser', JSON.stringify(response.user || { username }));
+                    localStorage.setItem(
+                        'isAdmin',
+                        response.user && response.user.is_admin ? 'true' : 'false'
+                    );
 
                     // Show success message
                     successDiv.classList.remove('d-none');
                     
                     // Redirect to dashboard after 1 second
                     setTimeout(() => {
-                        window.location.href = 'dashboard.html';
+                        window.location.href = response.user && response.user.is_admin
+                            ? 'admin.html'
+                            : 'dashboard.html';
                     }, 1000);
                 } else {
                     // Show error message from API
