@@ -7,3 +7,5 @@ numpy
 Pillow
 gdown==4.6.3
 gunicorn
+ultralytics
+opencv-python-headless
